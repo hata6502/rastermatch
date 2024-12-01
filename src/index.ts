@@ -2,7 +2,6 @@ import { Buffer } from "node:buffer";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { diffArrays } from "diff";
-import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 
 const mixColor = (
@@ -29,15 +28,7 @@ const oldPNG = PNG.sync.read(await readFile("a.png"));
 const newPNG = PNG.sync.read(await readFile("b.png"));
 
 const diff = diffArrays(await rasterize(oldPNG), await rasterize(newPNG), {
-  comparator: (left, right) => {
-    if (left.length !== right.length) {
-      return false;
-    }
-
-    return pixelmatch(left, right, null, left.length / 4, 1, {
-      threshold: 0.1,
-    }) == 0;
-  },
+  comparator: (left, right) => left.equals(right),
 });
 
 const diffPNG = new PNG({
