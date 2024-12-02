@@ -40,7 +40,7 @@ const runLengthPixelize = (raster) => {
 };
 const [, , oldPath, newPath, diffPath] = process.argv;
 if (!oldPath || !newPath || !diffPath) {
-    console.error("Usage: node index.js <old.png> <new.png> <diff.png>");
+    console.error("Usage: rastermatch old.png new.png output.png");
     process.exit(1);
 }
 const oldPNG = PNG.sync.read(await readFile(oldPath));

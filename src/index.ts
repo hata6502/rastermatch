@@ -56,9 +56,9 @@ const runLengthPixelize = (raster: Buffer) => {
   return pixels;
 };
 
-const [,,oldPath, newPath, diffPath] = process.argv;
+const [, , oldPath, newPath, diffPath] = process.argv;
 if (!oldPath || !newPath || !diffPath) {
-  console.error("Usage: node index.js <old.png> <new.png> <diff.png>");
+  console.error("Usage: rastermatch old.png new.png output.png");
   process.exit(1);
 }
 
