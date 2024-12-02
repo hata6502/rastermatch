@@ -1,9 +1,12 @@
 {
   "private": true,
-  "name": "hemming-match",
+  "name": "rastermatch",
   "version": "1.0.0",
   "author": "hata6502",
   "type": "module",
+  "bin": {
+    "rastermatch": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc"
   },

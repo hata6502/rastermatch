@@ -1,3 +1,5 @@
+#! /usr/bin/env node
+
 import { Buffer } from "node:buffer";
 import { readFile, writeFile } from "node:fs/promises";
 
@@ -19,16 +21,52 @@ const mixColor = (
 const rasterize = async (png: PNG) => {
   const rasters = [];
   for (let y = 0; y < png.height; y++) {
-    rasters.push(png.data.subarray(y * png.width * 4, (y + 1) * png.width * 4));
+    const original = png.data.subarray(
+      y * png.width * 4,
+      (y + 1) * png.width * 4
+    );
+
+    const pixels = runLengthPixelize(original);
+    const trimmed = original.subarray(
+      Number(pixels.at(0)?.split(",")[0]) * 4,
+      -Number(pixels.at(-1)?.split(",")[0]) * 4
+    );
+
+    rasters.push({ original, trimmed });
   }
   return rasters;
 };
 
-const oldPNG = PNG.sync.read(await readFile("a.png"));
-const newPNG = PNG.sync.read(await readFile("b.png"));
+const runLengthPixelize = (raster: Buffer) => {
+  const rasterArray = [...raster];
+  const pixels = [];
+  let count = 1;
+  let current = rasterArray.slice(0, 4).join("-");
+  for (let index = 4; index < raster.length; index += 4) {
+    const pixel = rasterArray.slice(index, index + 4).join("-");
+    if (pixel !== current) {
+      pixels.push(`${count},${current}`);
+      count = 1;
+      current = pixel;
+    } else {
+      count++;
+    }
+  }
+  pixels.push(`${count},${current}`);
+  return pixels;
+};
+
+const [,,oldPath, newPath, diffPath] = process.argv;
+if (!oldPath || !newPath || !diffPath) {
+  console.error("Usage: node index.js <old.png> <new.png> <diff.png>");
+  process.exit(1);
+}
+
+const oldPNG = PNG.sync.read(await readFile(oldPath));
+const newPNG = PNG.sync.read(await readFile(newPath));
 
 const diff = diffArrays(await rasterize(oldPNG), await rasterize(newPNG), {
-  comparator: (left, right) => left.equals(right),
+  comparator: (left, right) => left.trimmed.equals(right.trimmed),
 });
 
 const diffPNG = new PNG({
@@ -38,7 +76,7 @@ const diffPNG = new PNG({
 let diffY = 0;
 for (const { value, added, removed } of diff) {
   for (const raster of value) {
-    const coloredRaster = Buffer.from(raster);
+    const coloredRaster = Buffer.from(raster.original);
     for (
       let rasterIndex = 0;
       rasterIndex < coloredRaster.length;
@@ -55,4 +93,4 @@ for (const { value, added, removed } of diff) {
     diffY++;
   }
 }
-await writeFile("diff.png", PNG.sync.write(diffPNG));
+await writeFile(diffPath, PNG.sync.write(diffPNG));
