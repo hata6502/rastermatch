@@ -1,13 +1,12 @@
 #! /usr/bin/env node
 
-import { Buffer } from "node:buffer";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { diffArrays } from "diff";
 import { PNG } from "pngjs";
 
 const mixColor = (
-  target: Buffer,
+  target: number[],
   index: number,
   [r, g, b, a]: [number, number, number, number],
   ratio: number
@@ -21,39 +20,50 @@ const mixColor = (
 const rasterize = async (png: PNG) => {
   const rasters = [];
   for (let y = 0; y < png.height; y++) {
-    const original = png.data.subarray(
-      y * png.width * 4,
-      (y + 1) * png.width * 4
-    );
+    const original = [
+      ...png.data.subarray(y * png.width * 4, (y + 1) * png.width * 4),
+    ];
 
-    const pixels = runLengthPixelize(original);
-    const trimmed = original.subarray(
-      Number(pixels.at(0)?.split(",")[0]) * 4,
-      -Number(pixels.at(-1)?.split(",")[0]) * 4
-    );
+    let start = 0;
+    while (start < original.length) {
+      if (
+        original[start + 0] !== original[0] ||
+        original[start + 1] !== original[1] ||
+        original[start + 2] !== original[2] ||
+        original[start + 3] !== original[3]
+      ) {
+        break;
+      }
 
-    rasters.push({ original, trimmed });
+      start += 4;
+    }
+
+    let end = original.length;
+    while (end >= 0) {
+      end -= 4;
+
+      if (
+        original[end + 0] !== original[original.length - 4] ||
+        original[end + 1] !== original[original.length - 3] ||
+        original[end + 2] !== original[original.length - 2] ||
+        original[end + 3] !== original[original.length - 1]
+      ) {
+        break;
+      }
+    }
+
+    const trimmed = original.slice(start, end);
+    const hash = [
+      ...new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new Uint8Array(trimmed))
+      ),
+    ]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+
+    rasters.push({ original, hash });
   }
   return rasters;
-};
-
-const runLengthPixelize = (raster: Buffer) => {
-  const rasterArray = [...raster];
-  const pixels = [];
-  let count = 1;
-  let current = rasterArray.slice(0, 4).join("-");
-  for (let index = 4; index < raster.length; index += 4) {
-    const pixel = rasterArray.slice(index, index + 4).join("-");
-    if (pixel !== current) {
-      pixels.push(`${count},${current}`);
-      count = 1;
-      current = pixel;
-    } else {
-      count++;
-    }
-  }
-  pixels.push(`${count},${current}`);
-  return pixels;
 };
 
 const [, , oldPath, newPath, diffPath] = process.argv;
@@ -66,7 +76,7 @@ const oldPNG = PNG.sync.read(await readFile(oldPath));
 const newPNG = PNG.sync.read(await readFile(newPath));
 
 const diff = diffArrays(await rasterize(oldPNG), await rasterize(newPNG), {
-  comparator: (left, right) => left.trimmed.equals(right.trimmed),
+  comparator: (left, right) => left.hash === right.hash,
 });
 
 const diffPNG = new PNG({
@@ -76,7 +86,7 @@ const diffPNG = new PNG({
 let diffY = 0;
 for (const { value, added, removed } of diff) {
   for (const raster of value) {
-    const coloredRaster = Buffer.from(raster.original);
+    const coloredRaster = [...raster.original];
     for (
       let rasterIndex = 0;
       rasterIndex < coloredRaster.length;
@@ -89,7 +99,7 @@ for (const { value, added, removed } of diff) {
       }
     }
 
-    coloredRaster.copy(diffPNG.data, diffY * diffPNG.width * 4);
+    diffPNG.data.set(coloredRaster, diffY * diffPNG.width * 4);
     diffY++;
   }
 }
