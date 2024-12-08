@@ -1,28 +1,26 @@
-#! /usr/bin/env node
+import { ArrayChange, diffArrays } from "diff";
 
-import { readFile, writeFile } from "node:fs/promises";
+export interface Raster {
+  original: Uint8ClampedArray;
+  hash: string;
+}
 
-import { diffArrays } from "diff";
-import { PNG } from "pngjs";
+export const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) =>
+  diffArrays(oldRasters, newRasters, {
+    comparator: (left, right) => left.hash === right.hash,
+  });
 
-const mixColor = (
-  target: number[],
-  index: number,
-  [r, g, b, a]: [number, number, number, number],
-  ratio: number
-) => {
-  target[index + 0] = Math.round(target[index + 0] * (1 - ratio) + r * ratio);
-  target[index + 1] = Math.round(target[index + 1] * (1 - ratio) + g * ratio);
-  target[index + 2] = Math.round(target[index + 2] * (1 - ratio) + b * ratio);
-  target[index + 3] = Math.round(target[index + 3] * (1 - ratio) + a * ratio);
-};
-
-const rasterize = async (png: PNG) => {
+export const rasterize = async (image: {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+}) => {
   const rasters = [];
-  for (let y = 0; y < png.height; y++) {
-    const original = [
-      ...png.data.subarray(y * png.width * 4, (y + 1) * png.width * 4),
-    ];
+  for (let y = 0; y < image.height; y++) {
+    const original = image.data.slice(
+      y * image.width * 4,
+      (y + 1) * image.width * 4
+    );
 
     let start = 0;
     while (start < original.length) {
@@ -61,46 +59,52 @@ const rasterize = async (png: PNG) => {
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");
 
-    rasters.push({ original, hash });
+    const raster: Raster = { original, hash };
+    rasters.push(raster);
   }
   return rasters;
 };
 
-const [, , oldPath, newPath, diffPath] = process.argv;
-if (!oldPath || !newPath || !diffPath) {
-  console.error("Usage: rastermatch old.png new.png output.png");
-  process.exit(1);
-}
+export const generateDiffImage = (diff: ArrayChange<Raster>[]) => {
+  const width =
+    diff
+      .flatMap(({ value }) => value.flatMap((raster) => raster.original.length))
+      .reduce((max, length) => Math.max(max, length), 0) / 4;
+  const height = diff.reduce((sum, { value }) => sum + value.length, 0);
 
-const oldPNG = PNG.sync.read(await readFile(oldPath));
-const newPNG = PNG.sync.read(await readFile(newPath));
-
-const diff = diffArrays(await rasterize(oldPNG), await rasterize(newPNG), {
-  comparator: (left, right) => left.hash === right.hash,
-});
-
-const diffPNG = new PNG({
-  width: Math.max(oldPNG.width, newPNG.width),
-  height: diff.reduce((sum, { value }) => sum + value.length, 0),
-});
-let diffY = 0;
-for (const { value, added, removed } of diff) {
-  for (const raster of value) {
-    const coloredRaster = [...raster.original];
-    for (
-      let rasterIndex = 0;
-      rasterIndex < coloredRaster.length;
-      rasterIndex += 4
-    ) {
-      if (added) {
-        mixColor(coloredRaster, rasterIndex, [34, 220, 71, 255], 0.125);
-      } else if (removed) {
-        mixColor(coloredRaster, rasterIndex, [255, 12, 0, 255], 0.125);
+  const data = new Uint8ClampedArray(width * height * 4);
+  let y = 0;
+  for (const { value, added, removed } of diff) {
+    for (const raster of value) {
+      const coloredRaster = new Uint8ClampedArray(raster.original);
+      for (
+        let rasterIndex = 0;
+        rasterIndex < coloredRaster.length;
+        rasterIndex += 4
+      ) {
+        if (added) {
+          mixColor(coloredRaster, rasterIndex, [34, 220, 71, 255], 0.125);
+        } else if (removed) {
+          mixColor(coloredRaster, rasterIndex, [255, 12, 0, 255], 0.125);
+        }
       }
-    }
 
-    diffPNG.data.set(coloredRaster, diffY * diffPNG.width * 4);
-    diffY++;
+      data.set(coloredRaster, y * width * 4);
+      y++;
+    }
   }
-}
-await writeFile(diffPath, PNG.sync.write(diffPNG));
+
+  return { width, height, data };
+};
+
+const mixColor = (
+  target: Uint8ClampedArray,
+  index: number,
+  [r, g, b, a]: [number, number, number, number],
+  ratio: number
+) => {
+  target[index + 0] = Math.round(target[index + 0] * (1 - ratio) + r * ratio);
+  target[index + 1] = Math.round(target[index + 1] * (1 - ratio) + g * ratio);
+  target[index + 2] = Math.round(target[index + 2] * (1 - ratio) + b * ratio);
+  target[index + 3] = Math.round(target[index + 3] * (1 - ratio) + a * ratio);
+};
