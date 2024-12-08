@@ -144,7 +144,7 @@ export const App: FunctionComponent = () => {
         </h2>
 
         <p className="mt-8">
-          ドキュメントを比較したいときに使う行単位の画像diffツール。
+          ドキュメントを比較したいときに使う、行単位の画像diffツール。
         </p>
 
         <div className="mt-16">
