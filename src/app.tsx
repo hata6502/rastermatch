@@ -1,6 +1,7 @@
 import "./clarity";
 
 import { DocumentTextIcon } from "@heroicons/react/24/outline";
+import * as pdfjsLib from "pdfjs-dist";
 import {
   ChangeEventHandler,
   FunctionComponent,
@@ -12,6 +13,8 @@ import {
 import { createRoot } from "react-dom/client";
 
 import { Raster, diffRasters, generateDiffImage, rasterize } from "./index.js";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
 
 const Index: FunctionComponent = () => (
   <StrictMode>
@@ -72,27 +75,7 @@ export const App: FunctionComponent = () => {
   const handleOldChange: ChangeEventHandler<HTMLInputElement> = async (
     event
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    const imageBitmap = await createImageBitmap(file);
-    const canvasElement = document.createElement("canvas");
-    canvasElement.width = imageBitmap.width;
-    canvasElement.height = imageBitmap.height;
-    const canvasContext = canvasElement.getContext("2d");
-    if (!canvasContext) {
-      throw new Error("context is null");
-    }
-    canvasContext.drawImage(imageBitmap, 0, 0);
-    const imageData = canvasContext.getImageData(
-      0,
-      0,
-      canvasElement.width,
-      canvasElement.height
-    );
-
+    const imageData = await getImageData(event.target.files);
     setOldRasters(
       await rasterize({
         width: imageData.width,
@@ -105,27 +88,7 @@ export const App: FunctionComponent = () => {
   const handleNewChange: ChangeEventHandler<HTMLInputElement> = async (
     event
   ) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    const imageBitmap = await createImageBitmap(file);
-    const canvasElement = document.createElement("canvas");
-    canvasElement.width = imageBitmap.width;
-    canvasElement.height = imageBitmap.height;
-    const canvasContext = canvasElement.getContext("2d");
-    if (!canvasContext) {
-      throw new Error("context is null");
-    }
-    canvasContext.drawImage(imageBitmap, 0, 0);
-    const imageData = canvasContext.getImageData(
-      0,
-      0,
-      canvasElement.width,
-      canvasElement.height
-    );
-
+    const imageData = await getImageData(event.target.files);
     setNewRasters(
       await rasterize({
         width: imageData.width,
@@ -146,16 +109,17 @@ export const App: FunctionComponent = () => {
         <p className="mt-8">
           ドキュメントを比較したいときに使う、行単位の画像diffツール
           <br />
-          画像をアップロードせずに、ブラウザ上で比較できます
+          ファイルをアップロードせずに、ブラウザ上で比較できます
         </p>
 
         <div className="mt-16">
-          <div>比較したい画像を2つ選択してください</div>
+          <div>比較したいPDFや画像を選択してください</div>
 
           <div className="mt-8">
             <input
               type="file"
-              accept="image/*"
+              accept="application/pdf, image/*"
+              multiple
               onChange={handleOldChange}
               style={{
                 background: "rgb(255 12 0 / 12.5%)",
@@ -164,7 +128,8 @@ export const App: FunctionComponent = () => {
 
             <input
               type="file"
-              accept="image/*"
+              accept="application/pdf, image/*"
+              multiple
               onChange={handleNewChange}
               style={{
                 background: "rgb(34 220 71 / 12.5%)",
@@ -216,5 +181,78 @@ export const App: FunctionComponent = () => {
         </footer>
       </div>
     </div>
+  );
+};
+
+const getImageData = async (files: FileList | null) => {
+  const imageDataList = [];
+  for (const file of files ?? []) {
+    switch (file.type) {
+      case "application/pdf": {
+        const pdf = await pdfjsLib.getDocument(await file.arrayBuffer())
+          .promise;
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: devicePixelRatio });
+
+          const canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const canvasContext = canvas.getContext("2d");
+          if (!canvasContext) {
+            throw new Error("context is null");
+          }
+
+          await page.render({ canvasContext, viewport }).promise;
+          imageDataList.push(
+            canvasContext.getImageData(0, 0, canvas.width, canvas.height)
+          );
+        }
+        break;
+      }
+
+      default: {
+        const imageBitmap = await createImageBitmap(file);
+        const canvas = document.createElement("canvas");
+        canvas.width = imageBitmap.width;
+        canvas.height = imageBitmap.height;
+        const canvasContext = canvas.getContext("2d");
+        if (!canvasContext) {
+          throw new Error("context is null");
+        }
+        canvasContext.drawImage(imageBitmap, 0, 0);
+        imageDataList.push(
+          canvasContext.getImageData(0, 0, canvas.width, canvas.height)
+        );
+        break;
+      }
+    }
+  }
+
+  const concatedCanvas = document.createElement("canvas");
+  concatedCanvas.width = imageDataList.reduce(
+    (max, imageData) => Math.max(max, imageData.width),
+    0
+  );
+  concatedCanvas.height = imageDataList.reduce(
+    (sum, imageData) => sum + imageData.height,
+    0
+  );
+  const concatedCanvasContext = concatedCanvas.getContext("2d");
+  if (!concatedCanvasContext) {
+    throw new Error("context is null");
+  }
+
+  let concatedY = 0;
+  for (const imageData of imageDataList) {
+    concatedCanvasContext.putImageData(imageData, 0, concatedY);
+    concatedY += imageData.height;
+  }
+  return concatedCanvasContext.getImageData(
+    0,
+    0,
+    concatedCanvas.width,
+    concatedCanvas.height
   );
 };
