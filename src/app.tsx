@@ -1,4 +1,4 @@
-import "./clarity";
+import "./clarity.js";
 
 import { DocumentTextIcon } from "@heroicons/react/24/outline";
 import * as pdfjsLib from "pdfjs-dist";
