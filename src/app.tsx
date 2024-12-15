@@ -10,11 +10,54 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLanguage } from "react-controlled-translation";
 import { createRoot } from "react-dom/client";
 
 import { Raster, diffRasters, generateDiffImage, rasterize } from "./index.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
+
+const availableLangs = ["en", "ja"];
+const messages = {
+  "faq.oil-pixel": {
+    en: "Oil Pixel Art Maker",
+    ja: "油彩ドット絵メーカー",
+  },
+  "faq.almap": {
+    en: "Photo Map",
+    ja: "写真地図",
+  },
+  "faq.development": {
+    en: "Development room",
+    ja: "開発室",
+  },
+  description: {
+    en: "Line-by-line image diff tool for comparing documents",
+    ja: "ドキュメントを比較したいときに使う、行単位の画像diffツール",
+  },
+  offline: {
+    en: "Compare in your browser without uploading files",
+    ja: "ファイルをアップロードせずに、ブラウザ上で比較できます",
+  },
+  input: {
+    en: "Please select PDF or image files",
+    ja: "PDFや画像を選択してください",
+  },
+  hata6502: {
+    en: "hata6502",
+    ja: "ムギュウ",
+  },
+  disclaimer: {
+    en: "Disclaimer",
+    ja: "免責事項",
+  },
+};
+
+const t = (key: keyof typeof messages) => {
+  const lang = location.pathname.split("/").at(1) ?? "";
+  const value = new Map(Object.entries(messages[key]));
+  return value.get(lang) ?? value.get("en");
+};
 
 const Index: FunctionComponent = () => (
   <StrictMode>
@@ -27,20 +70,38 @@ createRoot(container).render(<Index />);
 
 const faqs = [
   {
-    title: "油彩ドット絵メーカー",
+    title: t("faq.oil-pixel"),
     url: "https://oil-pixel.hata6502.com/",
   },
   {
-    title: "写真地図",
+    title: t("faq.almap"),
     url: "https://almap.hata6502.com/",
   },
   {
-    title: "開発室",
+    title: t("faq.development"),
     url: "https://scrapbox.io/hata6502/rastermatch",
   },
 ];
 
 export const App: FunctionComponent = () => {
+  const translationLang = useLanguage();
+  if (availableLangs.includes(translationLang)) {
+    const paths = location.pathname.split("/");
+
+    if (availableLangs.includes(paths.at(1) ?? "")) {
+      paths.splice(1, 1);
+    }
+
+    if (translationLang !== "en") {
+      paths.splice(1, 0, translationLang);
+    }
+
+    const newPath = paths.join("/");
+    if (newPath !== location.pathname) {
+      location.pathname = newPath;
+    }
+  }
+
   const [oldRasters, setOldRasters] = useState<Raster[]>([]);
   const [newRasters, setNewRasters] = useState<Raster[]>([]);
 
@@ -103,17 +164,17 @@ export const App: FunctionComponent = () => {
       <div className="mt-16">
         <h2 className="flex flex-col-reverse items-center gap-4 break-keep break-words font-bold text-5xl md:flex-row">
           Hemming Diff
-          <img src="favicon.png" className="inline w-20" />
+          <img src="/favicon.png" className="inline w-20" />
         </h2>
 
         <p className="mt-8">
-          ドキュメントを比較したいときに使う、行単位の画像diffツール
+          {t("description")}
           <br />
-          ファイルをアップロードせずに、ブラウザ上で比較できます
+          {t("offline")}
         </p>
 
         <div className="mt-16">
-          <div>比較したいPDFや画像を選択してください</div>
+          <div>{t("input")}</div>
 
           <div className="mt-8">
             <input
@@ -167,7 +228,7 @@ export const App: FunctionComponent = () => {
               target="_blank"
               className="hover:text-gray-600"
             >
-              ムギュウ
+              {t("hata6502")}
             </a>
             &emsp;
             <a
@@ -175,7 +236,7 @@ export const App: FunctionComponent = () => {
               target="_blank"
               className="hover:text-gray-600"
             >
-              免責事項
+              {t("disclaimer")}
             </a>
           </p>
         </footer>
