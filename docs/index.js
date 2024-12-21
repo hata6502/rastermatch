@@ -1,7 +1,20 @@
 import { diffArrays } from "diff";
-export const diffRasters = (oldRasters, newRasters) => diffArrays(oldRasters, newRasters, {
-    comparator: (left, right) => left.hash === right.hash,
-});
+export const diffRasters = (oldRasters, newRasters) => {
+    const chunkSize = 8192;
+    const chunks = [];
+    for (let chunkIndex = 0; chunkIndex < Math.max(oldRasters.length, newRasters.length); chunkIndex += chunkSize) {
+        chunks.push({
+            oldChunk: oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
+            newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
+        });
+    }
+    return chunks.flatMap(({ oldChunk, newChunk }, chunkIndex) => {
+        console.log("rastermatch", chunkIndex);
+        return diffArrays(oldChunk, newChunk, {
+            comparator: (left, right) => left.hash === right.hash,
+        });
+    });
+};
 export const rasterize = async (image) => {
     const rasters = [];
     for (let y = 0; y < image.height; y++) {

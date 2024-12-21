@@ -5,10 +5,27 @@ export interface Raster {
   hash: string;
 }
 
-export const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) =>
-  diffArrays(oldRasters, newRasters, {
-    comparator: (left, right) => left.hash === right.hash,
+export const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) => {
+  const chunkSize = 8192;
+  const chunks = [];
+  for (
+    let chunkIndex = 0;
+    chunkIndex < Math.max(oldRasters.length, newRasters.length);
+    chunkIndex += chunkSize
+  ) {
+    chunks.push({
+      oldChunk: oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
+      newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
+    });
+  }
+
+  return chunks.flatMap(({ oldChunk, newChunk }, chunkIndex) => {
+    console.log("rastermatch", chunkIndex);
+    return diffArrays(oldChunk, newChunk, {
+      comparator: (left, right) => left.hash === right.hash,
+    });
   });
+};
 
 export const rasterize = async (image: {
   width: number;

@@ -105,13 +105,13 @@ export const App: FunctionComponent = () => {
   const [oldRasters, setOldRasters] = useState<Raster[]>([]);
   const [newRasters, setNewRasters] = useState<Raster[]>([]);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasGroupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!canvasRef.current) {
+    if (!canvasGroupRef.current) {
       return;
     }
-    const canvas = canvasRef.current;
+    const canvasGroup = canvasGroupRef.current;
 
     const diff = diffRasters(oldRasters, newRasters);
     const diffImage = generateDiffImage(diff);
@@ -119,44 +119,49 @@ export const App: FunctionComponent = () => {
       return;
     }
 
-    canvas.width = diffImage.width;
-    canvas.height = diffImage.height;
-    canvas.hidden = false;
-    const canvasContext = canvas.getContext("2d");
-    if (!canvasContext) {
-      throw new Error("context is null");
-    }
-    canvasContext.putImageData(
-      new ImageData(diffImage.data, diffImage.width, diffImage.height),
-      0,
-      0
+    canvasGroup.replaceChildren();
+    // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
+    const chunkHeight = Math.min(
+      32767,
+      Math.floor(268435456 / diffImage.width)
     );
+    for (let chunkY = 0; chunkY < diffImage.height; chunkY += chunkHeight) {
+      const chunkCanvas = document.createElement("canvas");
+      chunkCanvas.width = diffImage.width;
+      chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
+      chunkCanvas.classList.add("block", "max-w-full");
+      const chunkCanvasContext = chunkCanvas.getContext("2d");
+      if (!chunkCanvasContext) {
+        throw new Error("context is null");
+      }
+
+      chunkCanvasContext.putImageData(
+        new ImageData(
+          diffImage.data.slice(
+            chunkY * chunkCanvas.width * 4,
+            (chunkY + chunkCanvas.height) * chunkCanvas.width * 4
+          ),
+          chunkCanvas.width,
+          chunkCanvas.height
+        ),
+        0,
+        0
+      );
+
+      canvasGroup.append(chunkCanvas);
+    }
   }, [oldRasters, newRasters]);
 
   const handleOldChange: ChangeEventHandler<HTMLInputElement> = async (
     event
   ) => {
-    const imageData = await getImageData(event.target.files);
-    setOldRasters(
-      await rasterize({
-        width: imageData.width,
-        height: imageData.height,
-        data: imageData.data,
-      })
-    );
+    setOldRasters(await getRasters(event.target.files));
   };
 
   const handleNewChange: ChangeEventHandler<HTMLInputElement> = async (
     event
   ) => {
-    const imageData = await getImageData(event.target.files);
-    setNewRasters(
-      await rasterize({
-        width: imageData.width,
-        height: imageData.height,
-        data: imageData.data,
-      })
-    );
+    setNewRasters(await getRasters(event.target.files));
   };
 
   return (
@@ -199,9 +204,7 @@ export const App: FunctionComponent = () => {
           </div>
         </div>
 
-        <div className="mt-8">
-          <canvas ref={canvasRef} hidden className="w-full" />
-        </div>
+        <div ref={canvasGroupRef} className="mt-8" />
 
         <div className="mt-16">
           <div className="divide-y divide-gray-900/10">
@@ -245,7 +248,7 @@ export const App: FunctionComponent = () => {
   );
 };
 
-const getImageData = async (files: FileList | null) => {
+const getRasters = async (files: FileList | null) => {
   const imageDataList = [];
   for (const file of files ?? []) {
     switch (file.type) {
@@ -254,6 +257,7 @@ const getImageData = async (files: FileList | null) => {
           .promise;
 
         for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          console.log("getRasters", file.name, pageNumber);
           const page = await pdf.getPage(pageNumber);
           const viewport = page.getViewport({ scale: devicePixelRatio });
 
@@ -274,6 +278,7 @@ const getImageData = async (files: FileList | null) => {
       }
 
       default: {
+        console.log("getRasters", file.name);
         const imageBitmap = await createImageBitmap(file);
         const canvas = document.createElement("canvas");
         canvas.width = imageBitmap.width;
@@ -291,29 +296,15 @@ const getImageData = async (files: FileList | null) => {
     }
   }
 
-  const concatedCanvas = document.createElement("canvas");
-  concatedCanvas.width = imageDataList.reduce(
-    (max, imageData) => Math.max(max, imageData.width),
-    0
-  );
-  concatedCanvas.height = imageDataList.reduce(
-    (sum, imageData) => sum + imageData.height,
-    0
-  );
-  const concatedCanvasContext = concatedCanvas.getContext("2d");
-  if (!concatedCanvasContext) {
-    throw new Error("context is null");
+  const rasters = [];
+  for (const [imageDataIndex, imageData] of imageDataList.entries()) {
+    console.log("rasterize", imageDataIndex);
+    const chunkRasters = await rasterize({
+      width: imageData.width,
+      height: imageData.height,
+      data: imageData.data,
+    });
+    rasters.push(...chunkRasters);
   }
-
-  let concatedY = 0;
-  for (const imageData of imageDataList) {
-    concatedCanvasContext.putImageData(imageData, 0, concatedY);
-    concatedY += imageData.height;
-  }
-  return concatedCanvasContext.getImageData(
-    0,
-    0,
-    concatedCanvas.width,
-    concatedCanvas.height
-  );
+  return rasters;
 };
