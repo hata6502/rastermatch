@@ -20,7 +20,6 @@ export const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) => {
   }
 
   return chunks.flatMap(({ oldChunk, newChunk }, chunkIndex) => {
-    console.log("rastermatch", chunkIndex);
     return diffArrays(oldChunk, newChunk, {
       comparator: (left, right) => left.hash === right.hash,
     });
