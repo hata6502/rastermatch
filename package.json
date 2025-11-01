@@ -1,6 +1,6 @@
 {
   "name": "rastermatch",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "license": "CC0-1.0",
   "author": "hata6502",
   "type": "module",
@@ -15,18 +15,18 @@
     "start": "http-server -c-1 docs"
   },
   "dependencies": {
+    "@types/diff": "^6.0.0",
     "diff": "^7.0.0",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
-    "@types/diff": "^6.0.0",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^18.3.16",
     "@types/react-dom": "^18.3.5",
     "clsx": "^2.1.1",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.25.0",
     "http-server": "^14.1.1",
     "pdfjs-dist": "^4.9.155",
     "react": "^18.3.1",
