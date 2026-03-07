@@ -2,6 +2,8 @@ import { ArrayChange } from "diff";
 export interface Raster {
     original: Uint8ClampedArray;
     hash: string;
+    start: number;
+    end: number;
 }
 export declare const diffRasters: (oldRasters: Raster[], newRasters: Raster[]) => ArrayChange<Raster>[];
 export declare const rasterize: (image: {

@@ -8,11 +8,9 @@ export const diffRasters = (oldRasters, newRasters) => {
             newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
         });
     }
-    return chunks.flatMap(({ oldChunk, newChunk }, chunkIndex) => {
-        return diffArrays(oldChunk, newChunk, {
-            comparator: (left, right) => left.hash === right.hash,
-        });
-    });
+    return chunks.flatMap(({ oldChunk, newChunk }) => diffArrays(oldChunk, newChunk, {
+        comparator: (left, right) => left.hash === right.hash,
+    }));
 };
 export const rasterize = async (image) => {
     const rasters = [];
@@ -38,16 +36,20 @@ export const rasterize = async (image) => {
                 break;
             }
         }
-        const trimmed = original.slice(start, end);
         const hash = [
-            ...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(trimmed))),
+            ...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(original.slice(start, end)))),
         ]
             .map((byte) => byte.toString(16).padStart(2, "0"))
             .join("");
-        const raster = { original, hash };
-        rasters.push(raster);
+        rasters.push({ original, hash, start, end });
     }
     return rasters;
+};
+const emptyRaster = {
+    original: new Uint8ClampedArray(),
+    hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    start: 0,
+    end: 0,
 };
 export const generateDiffImage = (diff) => {
     const width = diff
@@ -56,26 +58,111 @@ export const generateDiffImage = (diff) => {
     const height = diff.reduce((sum, { value }) => sum + value.length, 0);
     const data = new Uint8ClampedArray(width * height * 4);
     let y = 0;
-    for (const { value, added, removed } of diff) {
-        for (const raster of value) {
-            const coloredRaster = new Uint8ClampedArray(raster.original);
-            for (let rasterIndex = 0; rasterIndex < coloredRaster.length; rasterIndex += 4) {
-                if (added) {
-                    mixColor(coloredRaster, rasterIndex, [34, 220, 71, 255], 0.125);
+    for (const [changeIndex, change] of diff.entries()) {
+        const fromChange = getFromChange({ change, changeIndex, diff });
+        for (const [rasterIndex, raster] of change.value.entries()) {
+            const fromRaster = getFromRaster({ rasterIndex, fromChange, change });
+            const groupedDataDiff = diffRaster(fromRaster, raster);
+            let dataIndex = 0;
+            for (const groupedDataChange of groupedDataDiff) {
+                if (groupedDataChange.removed) {
+                    continue;
                 }
-                else if (removed) {
-                    mixColor(coloredRaster, rasterIndex, [255, 12, 0, 255], 0.125);
+                for (const groupedData of groupedDataChange.value) {
+                    const colorAdditive = getColorAdditive({
+                        dataIndex,
+                        groupedDataChange,
+                        raster,
+                        fromRaster,
+                        change,
+                    });
+                    data.set([
+                        groupedData[0] * (1 - colorAdditive.ratio) +
+                            colorAdditive.color[0] * colorAdditive.ratio,
+                        groupedData[1] * (1 - colorAdditive.ratio) +
+                            colorAdditive.color[1] * colorAdditive.ratio,
+                        groupedData[2] * (1 - colorAdditive.ratio) +
+                            colorAdditive.color[2] * colorAdditive.ratio,
+                        groupedData[3] * (1 - colorAdditive.ratio) +
+                            colorAdditive.color[3] * colorAdditive.ratio,
+                    ], y * width * 4 + dataIndex);
+                    dataIndex += 4;
                 }
             }
-            data.set(coloredRaster, y * width * 4);
             y++;
         }
     }
     return { width, height, data };
 };
-const mixColor = (target, index, [r, g, b, a], ratio) => {
-    target[index + 0] = Math.round(target[index + 0] * (1 - ratio) + r * ratio);
-    target[index + 1] = Math.round(target[index + 1] * (1 - ratio) + g * ratio);
-    target[index + 2] = Math.round(target[index + 2] * (1 - ratio) + b * ratio);
-    target[index + 3] = Math.round(target[index + 3] * (1 - ratio) + a * ratio);
+const getFromChange = ({ change, changeIndex, diff, }) => {
+    if (change.added) {
+        if (changeIndex <= 0) {
+            return;
+        }
+        const fromChange = diff[changeIndex - 1];
+        if (!fromChange.removed) {
+            return;
+        }
+        return fromChange;
+    }
+    else if (change.removed) {
+        if (changeIndex >= diff.length - 1) {
+            return;
+        }
+        const fromChange = diff[changeIndex + 1];
+        if (!fromChange.added) {
+            return;
+        }
+        return fromChange;
+    }
+};
+const getFromRaster = ({ rasterIndex, fromChange, change, }) => {
+    if (!fromChange) {
+        return emptyRaster;
+    }
+    const fromRasterIndex = fromChange.value.length - change.value.length + rasterIndex;
+    if (fromRasterIndex < 0 || fromRasterIndex >= fromChange.value.length) {
+        return emptyRaster;
+    }
+    return fromChange.value[fromRasterIndex];
+};
+const diffRaster = (oldRaster, newRaster) => {
+    const chunkSize = 8192 * 4;
+    const chunks = [];
+    for (let chunkIndex = 0; chunkIndex < Math.max(oldRaster.original.length, newRaster.original.length); chunkIndex += chunkSize) {
+        chunks.push({
+            oldChunk: oldRaster.original.slice(chunkIndex, chunkIndex + chunkSize),
+            newChunk: newRaster.original.slice(chunkIndex, chunkIndex + chunkSize),
+        });
+    }
+    return chunks.flatMap(({ oldChunk, newChunk }) => diffArrays(groupedData(oldChunk), groupedData(newChunk), {
+        comparator: (left, right) => left[0] === right[0] &&
+            left[1] === right[1] &&
+            left[2] === right[2] &&
+            left[3] === right[3],
+    }));
+};
+const groupedData = (data) => {
+    const groupedData = [];
+    for (let dataIndex = 0; dataIndex < data.length; dataIndex += 4) {
+        groupedData.push(data.slice(dataIndex, dataIndex + 4));
+    }
+    return groupedData;
+};
+const getColorAdditive = ({ dataIndex, groupedDataChange, raster, fromRaster, change, }) => {
+    const color = change.added ? [34, 220, 71, 255] : [255, 12, 0, 255];
+    if (!change.added && !change.removed) {
+        return { color, ratio: 0 };
+    }
+    if (fromRaster.hash === emptyRaster.hash) {
+        return { color, ratio: 0.125 };
+    }
+    if (dataIndex >= raster.start &&
+        dataIndex < raster.end &&
+        groupedDataChange.added) {
+        return { color, ratio: 0.625 };
+    }
+    return change.removed
+        ? { color: [0, 0, 0, 0], ratio: 1 }
+        : { color, ratio: 0.125 };
 };
