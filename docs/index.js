@@ -8,11 +8,9 @@ export const diffRasters = (oldRasters, newRasters) => {
             newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
         });
     }
-    return chunks.flatMap(({ oldChunk, newChunk }, chunkIndex) => {
-        return diffArrays(oldChunk, newChunk, {
-            comparator: (left, right) => left.hash === right.hash,
-        });
-    });
+    return chunks.flatMap(({ oldChunk, newChunk }) => diffArrays(oldChunk, newChunk, {
+        comparator: (left, right) => left.hash === right.hash,
+    }));
 };
 export const rasterize = async (image) => {
     const rasters = [];
@@ -38,44 +36,182 @@ export const rasterize = async (image) => {
                 break;
             }
         }
-        const trimmed = original.slice(start, end);
         const hash = [
-            ...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(trimmed))),
+            ...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(original.slice(start, end)))),
         ]
             .map((byte) => byte.toString(16).padStart(2, "0"))
             .join("");
-        const raster = { original, hash };
-        rasters.push(raster);
+        rasters.push({ original, hash });
     }
     return rasters;
 };
-export const generateDiffImage = (diff) => {
-    const width = diff
-        .flatMap(({ value }) => value.flatMap((raster) => raster.original.length))
-        .reduce((max, length) => Math.max(max, length), 0) / 4;
-    const height = diff.reduce((sum, { value }) => sum + value.length, 0);
+export const generateDiffImage = async (diff) => {
+    const rasterDiff = [];
+    for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
+        const change = diff[changeIndex];
+        const nextChange = diff.at(changeIndex + 1);
+        if (change.removed && nextChange?.added) {
+            const intersectedLength = Math.min(change.value.length, nextChange.value.length);
+            rasterDiff.push({
+                type: "removed",
+                value: change.value.slice(0, change.value.length - intersectedLength),
+            });
+            rasterDiff.push({
+                type: "changed",
+                old: change.value.slice(change.value.length - intersectedLength),
+                new: nextChange.value.slice(0, intersectedLength),
+            });
+            rasterDiff.push({
+                type: "added",
+                value: nextChange.value.slice(intersectedLength),
+            });
+            changeIndex++;
+            continue;
+        }
+        rasterDiff.push({
+            type: change.added ? "added" : change.removed ? "removed" : "unchanged",
+            value: change.value,
+        });
+    }
+    const width = rasterDiff
+        .flatMap((change) => {
+        const changeType = change.type;
+        switch (changeType) {
+            case "added":
+            case "removed":
+            case "unchanged": {
+                return change.value;
+            }
+            case "changed": {
+                return [...change.old, ...change.new];
+            }
+            default: {
+                throw new Error(`Unknown change: ${changeType}`);
+            }
+        }
+    })
+        .reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
+    const height = rasterDiff.reduce((sum, change) => {
+        const changeType = change.type;
+        switch (changeType) {
+            case "added":
+            case "removed":
+            case "unchanged": {
+                return sum + change.value.length;
+            }
+            case "changed": {
+                return sum + change.old.length + change.new.length;
+            }
+            default: {
+                throw new Error(`Unknown change: ${changeType}`);
+            }
+        }
+    }, 0);
     const data = new Uint8ClampedArray(width * height * 4);
     let y = 0;
-    for (const { value, added, removed } of diff) {
-        for (const raster of value) {
-            const coloredRaster = new Uint8ClampedArray(raster.original);
-            for (let rasterIndex = 0; rasterIndex < coloredRaster.length; rasterIndex += 4) {
-                if (added) {
-                    mixColor(coloredRaster, rasterIndex, [34, 220, 71, 255], 0.125);
+    for (const change of rasterDiff) {
+        const changeType = change.type;
+        switch (changeType) {
+            case "added":
+            case "removed":
+            case "unchanged": {
+                for (const raster of change.value) {
+                    for (let dataIndex = 0; dataIndex < raster.original.length; dataIndex += 4) {
+                        const ratio = {
+                            added: 0.125,
+                            removed: 0.125,
+                            unchanged: 0,
+                        }[changeType];
+                        const additive = {
+                            added: [34, 220, 71, 255],
+                            removed: [255, 12, 0, 255],
+                            unchanged: [0, 0, 0, 0],
+                        }[changeType];
+                        data.set([
+                            raster.original[dataIndex + 0] * (1 - ratio) +
+                                additive[0] * ratio,
+                            raster.original[dataIndex + 1] * (1 - ratio) +
+                                additive[1] * ratio,
+                            raster.original[dataIndex + 2] * (1 - ratio) +
+                                additive[2] * ratio,
+                            raster.original[dataIndex + 3] * (1 - ratio) +
+                                additive[3] * ratio,
+                        ], y * width * 4 + dataIndex);
+                    }
+                    y++;
                 }
-                else if (removed) {
-                    mixColor(coloredRaster, rasterIndex, [255, 12, 0, 255], 0.125);
-                }
+                break;
             }
-            data.set(coloredRaster, y * width * 4);
-            y++;
+            case "changed": {
+                const verticalDiff = diffRasters(await rasterize(transposeRasters(change.old)), await rasterize(transposeRasters(change.new)));
+                let oldX = 0;
+                let newX = 0;
+                for (const verticalChange of verticalDiff) {
+                    if (verticalChange.removed) {
+                        for (const verticalRaster of verticalChange.value) {
+                            for (let dataIndex = 0; dataIndex < verticalRaster.original.length; dataIndex += 4) {
+                                const ratio = 0.125;
+                                const additive = [255, 12, 0, 255];
+                                data.set([
+                                    verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                                        additive[0] * ratio,
+                                    verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                                        additive[1] * ratio,
+                                    verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                                        additive[2] * ratio,
+                                    verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                                        additive[3] * ratio,
+                                ], (y * width + oldX) * 4 + dataIndex * width);
+                            }
+                            oldX++;
+                        }
+                        continue;
+                    }
+                    for (const verticalRaster of verticalChange.value) {
+                        for (let dataIndex = 0; dataIndex < verticalRaster.original.length; dataIndex += 4) {
+                            const ratio = verticalChange.added ? 0.125 : 0;
+                            const additive = [34, 220, 71, 255];
+                            data.set([
+                                verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                                    additive[0] * ratio,
+                                verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                                    additive[1] * ratio,
+                                verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                                    additive[2] * ratio,
+                                verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                                    additive[3] * ratio,
+                            ], ((y + change.old.length) * width + newX) * 4 +
+                                dataIndex * width);
+                        }
+                        if (!verticalChange.added) {
+                            oldX++;
+                        }
+                        newX++;
+                    }
+                }
+                y += change.old.length + change.new.length;
+                break;
+            }
+            default: {
+                throw new Error(`Unknown change: ${changeType}`);
+            }
         }
     }
     return { width, height, data };
 };
-const mixColor = (target, index, [r, g, b, a], ratio) => {
-    target[index + 0] = Math.round(target[index + 0] * (1 - ratio) + r * ratio);
-    target[index + 1] = Math.round(target[index + 1] * (1 - ratio) + g * ratio);
-    target[index + 2] = Math.round(target[index + 2] * (1 - ratio) + b * ratio);
-    target[index + 3] = Math.round(target[index + 3] * (1 - ratio) + a * ratio);
+const transposeRasters = (rasters) => {
+    const width = rasters.length;
+    const height = rasters.reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            data.set([
+                rasters[x].original[y * 4 + 0],
+                rasters[x].original[y * 4 + 1],
+                rasters[x].original[y * 4 + 2],
+                rasters[x].original[y * 4 + 3],
+            ], (y * width + x) * 4);
+        }
+    }
+    return { width, height, data };
 };

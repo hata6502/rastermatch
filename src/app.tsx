@@ -108,58 +108,68 @@ export const App: FunctionComponent = () => {
   const canvasGroupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!canvasGroupRef.current) {
-      return;
-    }
-    const canvasGroup = canvasGroupRef.current;
+    const abortController = new AbortController();
+    (async () => {
+      if (!canvasGroupRef.current) {
+        return;
+      }
+      const canvasGroup = canvasGroupRef.current;
 
-    const diff = diffRasters(oldRasters, newRasters);
-    const diffImage = generateDiffImage(diff);
-    if (!diffImage.width || !diffImage.height) {
-      return;
-    }
-
-    canvasGroup.replaceChildren();
-    // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
-    const chunkHeight = Math.min(
-      32767,
-      Math.floor(268435456 / diffImage.width)
-    );
-    for (let chunkY = 0; chunkY < diffImage.height; chunkY += chunkHeight) {
-      const chunkCanvas = document.createElement("canvas");
-      chunkCanvas.width = diffImage.width;
-      chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
-      chunkCanvas.classList.add("block", "max-w-full");
-      const chunkCanvasContext = chunkCanvas.getContext("2d");
-      if (!chunkCanvasContext) {
-        throw new Error("context is null");
+      const diff = diffRasters(oldRasters, newRasters);
+      const diffImage = await generateDiffImage(diff);
+      if (!diffImage.width || !diffImage.height) {
+        return;
       }
 
-      chunkCanvasContext.putImageData(
-        new ImageData(
-          diffImage.data.slice(
-            chunkY * chunkCanvas.width * 4,
-            (chunkY + chunkCanvas.height) * chunkCanvas.width * 4
-          ),
-          chunkCanvas.width,
-          chunkCanvas.height
-        ),
-        0,
-        0
+      if (abortController.signal.aborted) {
+        throw abortController.signal.reason;
+      }
+      canvasGroup.replaceChildren();
+      // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
+      const chunkHeight = Math.min(
+        32767,
+        Math.floor(268435456 / diffImage.width),
       );
+      for (let chunkY = 0; chunkY < diffImage.height; chunkY += chunkHeight) {
+        const chunkCanvas = document.createElement("canvas");
+        chunkCanvas.width = diffImage.width;
+        chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
+        chunkCanvas.classList.add("block", "max-w-full");
+        const chunkCanvasContext = chunkCanvas.getContext("2d");
+        if (!chunkCanvasContext) {
+          throw new Error("context is null");
+        }
 
-      canvasGroup.append(chunkCanvas);
-    }
+        chunkCanvasContext.putImageData(
+          new ImageData(
+            diffImage.data.slice(
+              chunkY * chunkCanvas.width * 4,
+              (chunkY + chunkCanvas.height) * chunkCanvas.width * 4,
+            ),
+            chunkCanvas.width,
+            chunkCanvas.height,
+          ),
+          0,
+          0,
+        );
+
+        canvasGroup.append(chunkCanvas);
+      }
+    })();
+
+    return () => {
+      abortController.abort();
+    };
   }, [oldRasters, newRasters]);
 
   const handleOldChange: ChangeEventHandler<HTMLInputElement> = async (
-    event
+    event,
   ) => {
     setOldRasters(await getRasters(event.target.files));
   };
 
   const handleNewChange: ChangeEventHandler<HTMLInputElement> = async (
-    event
+    event,
   ) => {
     setNewRasters(await getRasters(event.target.files));
   };
@@ -168,7 +178,7 @@ export const App: FunctionComponent = () => {
     <div className="bg-white mx-auto max-w-4xl mb-16 px-8">
       <div className="mt-16">
         <h2 className="flex flex-col-reverse items-center gap-4 break-keep break-words font-bold text-5xl md:flex-row">
-          Hemming Diff
+          Raster Diff
           <img src="/favicon.png" className="inline w-20" />
         </h2>
 
@@ -235,7 +245,7 @@ export const App: FunctionComponent = () => {
             </a>
             &emsp;
             <a
-              href="https://scrapbox.io/hata6502/Hemming_Diff%E5%85%8D%E8%B2%AC%E4%BA%8B%E9%A0%85"
+              href="https://scrapbox.io/hata6502/Raster_Diff%E5%85%8D%E8%B2%AC%E4%BA%8B%E9%A0%85"
               target="_blank"
               className="hover:text-gray-600"
             >
@@ -271,7 +281,7 @@ const getRasters = async (files: FileList | null) => {
 
           await page.render({ canvasContext, viewport }).promise;
           imageDataList.push(
-            canvasContext.getImageData(0, 0, canvas.width, canvas.height)
+            canvasContext.getImageData(0, 0, canvas.width, canvas.height),
           );
         }
         break;
@@ -289,7 +299,7 @@ const getRasters = async (files: FileList | null) => {
         }
         canvasContext.drawImage(imageBitmap, 0, 0);
         imageDataList.push(
-          canvasContext.getImageData(0, 0, canvas.width, canvas.height)
+          canvasContext.getImageData(0, 0, canvas.width, canvas.height),
         );
         break;
       }

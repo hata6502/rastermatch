@@ -18,7 +18,7 @@ const diff = diffRasters(await rasterize({
     height: newPNG.height,
     data: new Uint8ClampedArray(newPNG.data),
 }));
-const diffImage = generateDiffImage(diff);
+const diffImage = await generateDiffImage(diff);
 const diffPNG = new PNG({ width: diffImage.width, height: diffImage.height });
 diffPNG.data.set(diffImage.data);
 await writeFile(diffPath, PNG.sync.write(diffPNG));
