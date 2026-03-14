@@ -12,6 +12,7 @@
     "build": "tsc && npm run build:css && npm run build:app",
     "build:css": "npx tailwindcss -i src/index.css -o docs/index.css --minify",
     "build:app": "esbuild src/app.tsx --bundle --format=esm --minify --outfile=docs/app.js",
+    "test": "tsc --noEmit",
     "start": "http-server -c-1 docs"
   },
   "dependencies": {

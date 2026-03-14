@@ -4,6 +4,7 @@ import { DocumentTextIcon } from "@heroicons/react/24/outline";
 import * as pdfjsLib from "pdfjs-dist";
 import {
   ChangeEventHandler,
+  Fragment,
   FunctionComponent,
   StrictMode,
   useEffect,
@@ -27,20 +28,84 @@ createRoot(container).render(<Index />);
 
 const faqs = [
   {
-    title: "Japanese proofreading tool",
+    englishTitle: "Japanese proofreading tool",
+    japaneseTitle: "校正さん",
     url: "https://kohsei-san.hata6502.com/",
   },
   {
-    title: "Accessible image embedding tool",
+    englishTitle: "Accessible image embedding tool",
+    japaneseTitle: "Mojimage - アクセシブル画像埋め込みツール",
     url: "https://mojimage.hata6502.com/",
   },
 ];
+
+const displayConfigs: Record<
+  string,
+  {
+    pageTitle: string;
+    heading: string;
+    descriptionLines: string[];
+    filePrompt: string;
+  }
+> = {
+  default: {
+    pageTitle: "Raster Diff",
+    heading: "Raster Diff",
+    descriptionLines: [
+      "Line-by-line image diff tool for comparing documents",
+      "Compare in your browser without uploading files",
+    ],
+    filePrompt: "Please select PDF or image files",
+  },
+  pdf: {
+    pageTitle: "オフラインPDF差分比較ツール",
+    heading: "オフラインPDF差分比較ツール",
+    descriptionLines: [
+      "PDFの差分を行単位の画像比較で確認できます",
+      "ファイルをアップロードせず、ブラウザだけで比較できます",
+    ],
+    filePrompt: "比較するPDFファイルを選択してください",
+  },
+  screenshot: {
+    pageTitle: "スクリーンショット差分比較ツール",
+    heading: "スクリーンショット差分比較ツール",
+    descriptionLines: [
+      "スクリーンショットや画像の差分を行単位で比較できます",
+      "ファイルをアップロードせず、ブラウザだけで比較できます",
+    ],
+    filePrompt: "比較するスクリーンショット画像を選択してください",
+  },
+};
 
 export const App: FunctionComponent = () => {
   const [oldRasters, setOldRasters] = useState<Raster[]>([]);
   const [newRasters, setNewRasters] = useState<Raster[]>([]);
 
   const canvasGroupRef = useRef<HTMLDivElement>(null);
+  const display = new URLSearchParams(window.location.search).get("display") ??
+    "default";
+  const displayConfig = displayConfigs[display];
+  const faqTitleKey = display === "default" ? "englishTitle" : "japaneseTitle";
+  const heading =
+    display === "pdf" ? (
+      <>
+        オフライン<wbr />
+        PDF<wbr />
+        差分比較ツール
+      </>
+    ) : display === "screenshot" ? (
+      <>
+        スクリーン<wbr />
+        ショット<wbr />
+        差分比較ツール
+      </>
+    ) : (
+      displayConfig.heading
+    );
+
+  useEffect(() => {
+    document.title = displayConfig.pageTitle;
+  }, [displayConfig]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -113,18 +178,21 @@ export const App: FunctionComponent = () => {
     <div className="bg-white mx-auto max-w-4xl mb-16 px-8">
       <div className="mt-16">
         <h2 className="flex flex-col-reverse items-center gap-4 break-keep break-words font-bold text-5xl md:flex-row">
-          Raster Diff
+          <span className="text-center md:text-left">{heading}</span>
           <img src="/favicon.png" className="inline w-20" />
         </h2>
 
         <p className="mt-8">
-          Line-by-line image diff tool for comparing documents
-          <br />
-          Compare in your browser without uploading files
+          {displayConfig.descriptionLines.map((line, index) => (
+            <Fragment key={`${index}-${line}`}>
+              {index > 0 && <br />}
+              {line}
+            </Fragment>
+          ))}
         </p>
 
         <div className="mt-16">
-          <div>Please select PDF or image files</div>
+          <div>{displayConfig.filePrompt}</div>
 
           <div className="mt-8">
             <input
@@ -153,15 +221,17 @@ export const App: FunctionComponent = () => {
 
         <div className="mt-16">
           <div className="divide-y divide-gray-900/10">
-            {faqs.map(({ title, url }) => (
+            {faqs.map((faq) => (
               <a
-                key={title}
-                href={url}
+                key={faq.url}
+                href={faq.url}
                 target="_blank"
                 className="flex items-center gap-x-2 py-6"
               >
                 <DocumentTextIcon className="h-6 w-6" aria-hidden="true" />
-                <span className="font-semibold leading-7">{title}</span>
+                <span className="font-semibold leading-7">
+                  {faq[faqTitleKey]}
+                </span>
               </a>
             ))}
           </div>
