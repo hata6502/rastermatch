@@ -50,6 +50,7 @@ export const rasterize = async (image) => {
         if (!duplicated) {
             if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
                 duplicated = true;
+                ignoreRasterCount *= 1.25;
             }
             else {
                 duplicatedHashes.push(rasters[rasterIndex].hash);
