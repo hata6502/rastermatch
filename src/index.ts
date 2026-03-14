@@ -86,7 +86,6 @@ export const rasterize = async (image: {
     if (!duplicated) {
       if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
         duplicated = true;
-        ignoreRasterCount *= 1.25;
       } else {
         duplicatedHashes.push(rasters[rasterIndex].hash);
         ignoreRasterCount++;
@@ -94,7 +93,6 @@ export const rasterize = async (image: {
     }
 
     if (duplicated) {
-      if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
         ignoreRasterCount--;
 
         if (ignoreRasterCount >= 0) {
@@ -109,7 +107,8 @@ export const rasterize = async (image: {
             .map((byte) => byte.toString(16).padStart(2, "0"))
             .join("");
         }
-      } else {
+      
+            if (rasters[rasterIndex].hash !== rasters[rasterIndex + 1].hash) {
         duplicatedHashes.splice(0);
         duplicated = false;
         ignoreRasterCount = 0;
