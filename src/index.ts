@@ -83,8 +83,10 @@ export const rasterize = async (image: {
   let duplicated = false;
   let ignoreRasterCount = 0;
   for (let rasterIndex = 0; rasterIndex < rasters.length - 1; rasterIndex++) {
+    const hash = rasters[rasterIndex].hash;
+
     if (!duplicated) {
-      if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
+      if (hash === rasters[rasterIndex + 1].hash) {
         duplicated = true;
       } else {
         duplicatedHashes.push(rasters[rasterIndex].hash);
@@ -93,22 +95,21 @@ export const rasterize = async (image: {
     }
 
     if (duplicated) {
-        ignoreRasterCount--;
-
-        if (ignoreRasterCount >= 0) {
-          rasters[rasterIndex].hash = [
-            ...new Uint8Array(
-              await crypto.subtle.digest(
-                "SHA-256",
-                new TextEncoder().encode(duplicatedHashes.join("-")),
-              ),
+      ignoreRasterCount--;
+      if (ignoreRasterCount >= 0) {
+        rasters[rasterIndex].hash = [
+          ...new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(duplicatedHashes.join("-")),
             ),
-          ]
-            .map((byte) => byte.toString(16).padStart(2, "0"))
-            .join("");
-        }
-      
-            if (rasters[rasterIndex].hash !== rasters[rasterIndex + 1].hash) {
+          ),
+        ]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      if (hash !== rasters[rasterIndex + 1].hash) {
         duplicatedHashes.splice(0);
         duplicated = false;
         ignoreRasterCount = 0;
