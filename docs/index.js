@@ -43,6 +43,37 @@ export const rasterize = async (image) => {
             .join("");
         rasters.push({ original, hash });
     }
+    const duplicatedHashes = [];
+    let duplicated = false;
+    let ignoreRasterCount = 0;
+    for (let rasterIndex = 0; rasterIndex < rasters.length - 1; rasterIndex++) {
+        if (!duplicated) {
+            if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
+                duplicated = true;
+            }
+            else {
+                duplicatedHashes.push(rasters[rasterIndex].hash);
+                ignoreRasterCount++;
+            }
+        }
+        if (duplicated) {
+            if (rasters[rasterIndex].hash === rasters[rasterIndex + 1].hash) {
+                ignoreRasterCount--;
+                if (ignoreRasterCount >= 0) {
+                    rasters[rasterIndex].hash = [
+                        ...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(duplicatedHashes.join("-")))),
+                    ]
+                        .map((byte) => byte.toString(16).padStart(2, "0"))
+                        .join("");
+                }
+            }
+            else {
+                duplicatedHashes.splice(0);
+                duplicated = false;
+                ignoreRasterCount = 0;
+            }
+        }
+    }
     return rasters;
 };
 export const generateDiffImage = async (diff) => {
