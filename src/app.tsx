@@ -81,22 +81,26 @@ export const App: FunctionComponent = () => {
   const [oldRasters, setOldRasters] = useState<Raster[]>([]);
   const [newRasters, setNewRasters] = useState<Raster[]>([]);
 
-  const canvasGroupRef = useRef<HTMLDivElement>(null);
-  const display = new URLSearchParams(window.location.search).get("display") ??
-    "default";
+  const imageGroupRef = useRef<HTMLDivElement>(null);
+  const display =
+    new URLSearchParams(window.location.search).get("display") ?? "default";
   const displayConfig = displayConfigs[display];
   const faqTitleKey = display === "default" ? "englishTitle" : "japaneseTitle";
   const heading =
     display === "pdf" ? (
       <>
-        オフライン<wbr />
-        PDF<wbr />
+        オフライン
+        <wbr />
+        PDF
+        <wbr />
         差分比較ツール
       </>
     ) : display === "screenshot" ? (
       <>
-        スクリーン<wbr />
-        ショット<wbr />
+        スクリーン
+        <wbr />
+        ショット
+        <wbr />
         差分比較ツール
       </>
     ) : (
@@ -110,10 +114,10 @@ export const App: FunctionComponent = () => {
   useEffect(() => {
     const abortController = new AbortController();
     (async () => {
-      if (!canvasGroupRef.current) {
+      if (!imageGroupRef.current) {
         return;
       }
-      const canvasGroup = canvasGroupRef.current;
+      const imageGroup = imageGroupRef.current;
 
       const diff = diffRasters(oldRasters, newRasters);
       const diffImage = await generateDiffImage(diff);
@@ -124,7 +128,7 @@ export const App: FunctionComponent = () => {
       if (abortController.signal.aborted) {
         throw abortController.signal.reason;
       }
-      canvasGroup.replaceChildren();
+      imageGroup.replaceChildren();
       // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
       const chunkHeight = Math.min(
         32767,
@@ -134,7 +138,6 @@ export const App: FunctionComponent = () => {
         const chunkCanvas = document.createElement("canvas");
         chunkCanvas.width = diffImage.width;
         chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
-        chunkCanvas.classList.add("block", "max-w-full");
         const chunkCanvasContext = chunkCanvas.getContext("2d");
         if (!chunkCanvasContext) {
           throw new Error("context is null");
@@ -153,7 +156,24 @@ export const App: FunctionComponent = () => {
           0,
         );
 
-        canvasGroup.append(chunkCanvas);
+        const chunkBlob = await new Promise<Blob>((resolve, reject) => {
+          chunkCanvas.toBlob((blob) => {
+            if (!blob) {
+              reject(new Error("blob is null"));
+              return;
+            }
+
+            resolve(blob);
+          }, "image/png");
+        });
+
+        if (abortController.signal.aborted) {
+          throw abortController.signal.reason;
+        }
+        const chunkImage = document.createElement("img");
+        chunkImage.src = URL.createObjectURL(chunkBlob);
+        chunkImage.classList.add("block");
+        imageGroup.append(chunkImage);
       }
     })();
 
@@ -217,7 +237,7 @@ export const App: FunctionComponent = () => {
           </div>
         </div>
 
-        <div ref={canvasGroupRef} className="mt-8" />
+        <div ref={imageGroupRef} className="mt-8" />
 
         <div className="mt-16">
           <div className="divide-y divide-gray-900/10">
