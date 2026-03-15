@@ -99,228 +99,225 @@ export const rasterize = async (image: {
   return rasters;
 };
 
-export const generateDiffImage = async (
+export async function* generateDiffImages(
   oldRasters: Raster[],
   newRasters: Raster[],
-) => {
-  const diff = [...diffRasters(oldRasters, newRasters)];
+) {
+  for (const diff of diffRasters(oldRasters, newRasters)) {
+    const rasterDiff = [];
+    for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
+      const change = diff[changeIndex];
+      const nextChange = diff.at(changeIndex + 1);
 
-  const rasterDiff = [];
-  for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
-    const change = diff[changeIndex];
-    const nextChange = diff.at(changeIndex + 1);
+      if (change.removed && nextChange?.added) {
+        const intersectedLength = Math.min(
+          change.value.length,
+          nextChange.value.length,
+        );
 
-    if (change.removed && nextChange?.added) {
-      const intersectedLength = Math.min(
-        change.value.length,
-        nextChange.value.length,
-      );
+        rasterDiff.push({
+          type: "removed",
+          value: change.value.slice(0, change.value.length - intersectedLength),
+        } as const);
+        rasterDiff.push({
+          type: "changed",
+          old: change.value.slice(change.value.length - intersectedLength),
+          new: nextChange.value.slice(0, intersectedLength),
+        } as const);
+        rasterDiff.push({
+          type: "added",
+          value: nextChange.value.slice(intersectedLength),
+        } as const);
+
+        changeIndex++;
+        continue;
+      }
 
       rasterDiff.push({
-        type: "removed",
-        value: change.value.slice(0, change.value.length - intersectedLength),
+        type: change.added ? "added" : change.removed ? "removed" : "unchanged",
+        value: change.value,
       } as const);
-      rasterDiff.push({
-        type: "changed",
-        old: change.value.slice(change.value.length - intersectedLength),
-        new: nextChange.value.slice(0, intersectedLength),
-      } as const);
-      rasterDiff.push({
-        type: "added",
-        value: nextChange.value.slice(intersectedLength),
-      } as const);
-
-      changeIndex++;
-      continue;
     }
 
-    rasterDiff.push({
-      type: change.added ? "added" : change.removed ? "removed" : "unchanged",
-      value: change.value,
-    } as const);
-  }
+    const width = rasterDiff
+      .flatMap((change) => {
+        const changeType = change.type;
+        switch (changeType) {
+          case "added":
+          case "removed":
+          case "unchanged": {
+            return change.value;
+          }
 
-  const width = rasterDiff
-    .flatMap((change) => {
+          case "changed": {
+            return [...change.old, ...change.new];
+          }
+
+          default: {
+            throw new Error(`Unknown change: ${changeType satisfies never}`);
+          }
+        }
+      })
+      .reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
+    const height = rasterDiff.reduce((sum, change) => {
       const changeType = change.type;
       switch (changeType) {
         case "added":
         case "removed":
         case "unchanged": {
-          return change.value;
+          return sum + change.value.length;
         }
 
         case "changed": {
-          return [...change.old, ...change.new];
+          return sum + change.old.length + change.new.length;
         }
 
         default: {
           throw new Error(`Unknown change: ${changeType satisfies never}`);
         }
       }
-    })
-    .reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
-  const height = rasterDiff.reduce((sum, change) => {
-    const changeType = change.type;
-    switch (changeType) {
-      case "added":
-      case "removed":
-      case "unchanged": {
-        return sum + change.value.length;
-      }
+    }, 0);
 
-      case "changed": {
-        return sum + change.old.length + change.new.length;
-      }
-
-      default: {
-        throw new Error(`Unknown change: ${changeType satisfies never}`);
-      }
-    }
-  }, 0);
-
-  const data = new Uint8ClampedArray(width * height * 4);
-  let y = 0;
-  for (const change of rasterDiff) {
-    const changeType = change.type;
-    switch (changeType) {
-      case "added":
-      case "removed":
-      case "unchanged": {
-        for (const raster of change.value) {
-          for (
-            let dataIndex = 0;
-            dataIndex < raster.original.length;
-            dataIndex += 4
-          ) {
-            const ratio = {
-              added: 0.125,
-              removed: 0.125,
-              unchanged: 0,
-            }[changeType];
-            const additive = {
-              added: [34, 220, 71, 255],
-              removed: [255, 12, 0, 255],
-              unchanged: [0, 0, 0, 0],
-            }[changeType];
-
-            data.set(
-              [
-                raster.original[dataIndex + 0] * (1 - ratio) +
-                  additive[0] * ratio,
-                raster.original[dataIndex + 1] * (1 - ratio) +
-                  additive[1] * ratio,
-                raster.original[dataIndex + 2] * (1 - ratio) +
-                  additive[2] * ratio,
-                raster.original[dataIndex + 3] * (1 - ratio) +
-                  additive[3] * ratio,
-              ],
-              y * width * 4 + dataIndex,
-            );
-          }
-
-          y++;
-        }
-
-        break;
-      }
-
-      case "changed": {
-        const verticalDiff = diffRasters(
-          await rasterize(transposeRasters(change.old)),
-          await rasterize(transposeRasters(change.new)),
-        );
-
-        let oldX = 0;
-        let newX = 0;
-        for (const verticalChange of verticalDiff) {
-          if (verticalChange.removed) {
-            for (const verticalRaster of verticalChange.value) {
-              for (
-                let dataIndex = 0;
-                dataIndex < verticalRaster.original.length;
-                dataIndex += 4
-              ) {
-                const ratio = 0.125;
-                const additive = [255, 12, 0, 255];
-
-                data.set(
-                  [
-                    verticalRaster.original[dataIndex + 0] * (1 - ratio) +
-                      additive[0] * ratio,
-                    verticalRaster.original[dataIndex + 1] * (1 - ratio) +
-                      additive[1] * ratio,
-                    verticalRaster.original[dataIndex + 2] * (1 - ratio) +
-                      additive[2] * ratio,
-                    verticalRaster.original[dataIndex + 3] * (1 - ratio) +
-                      additive[3] * ratio,
-                  ],
-                  (y * width + oldX) * 4 + dataIndex * width,
-                );
-              }
-
-              oldX++;
-            }
-
-            continue;
-          }
-
-          for (const verticalRaster of verticalChange.value) {
+    const data = new Uint8ClampedArray(width * height * 4);
+    let y = 0;
+    for (const change of rasterDiff) {
+      const changeType = change.type;
+      switch (changeType) {
+        case "added":
+        case "removed":
+        case "unchanged": {
+          for (const raster of change.value) {
             for (
               let dataIndex = 0;
-              dataIndex < verticalRaster.original.length;
+              dataIndex < raster.original.length;
               dataIndex += 4
             ) {
-              const ratio = verticalChange.added ? 0.125 : 0;
-              const additive = [34, 220, 71, 255];
+              const ratio = {
+                added: 0.125,
+                removed: 0.125,
+                unchanged: 0,
+              }[changeType];
+              const additive = {
+                added: [34, 220, 71, 255],
+                removed: [255, 12, 0, 255],
+                unchanged: [0, 0, 0, 0],
+              }[changeType];
 
               data.set(
                 [
-                  verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                  raster.original[dataIndex + 0] * (1 - ratio) +
                     additive[0] * ratio,
-                  verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                  raster.original[dataIndex + 1] * (1 - ratio) +
                     additive[1] * ratio,
-                  verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                  raster.original[dataIndex + 2] * (1 - ratio) +
                     additive[2] * ratio,
-                  verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                  raster.original[dataIndex + 3] * (1 - ratio) +
                     additive[3] * ratio,
                 ],
-                ((y + change.old.length) * width + newX) * 4 +
-                  dataIndex * width,
+                y * width * 4 + dataIndex,
               );
             }
 
-            if (!verticalChange.added) {
-              oldX++;
-            }
-            newX++;
+            y++;
           }
+
+          break;
         }
 
-        y += change.old.length + change.new.length;
-        break;
-      }
+        case "changed": {
+          let oldX = 0;
+          let newX = 0;
+          for (const verticalDiff of diffRasters(
+            await rasterize(transposeRasters(change.old)),
+            await rasterize(transposeRasters(change.new)),
+          )) {
+            for (const verticalChange of verticalDiff) {
+              if (verticalChange.removed) {
+                for (const verticalRaster of verticalChange.value) {
+                  for (
+                    let dataIndex = 0;
+                    dataIndex < verticalRaster.original.length;
+                    dataIndex += 4
+                  ) {
+                    const ratio = 0.125;
+                    const additive = [255, 12, 0, 255];
 
-      default: {
-        throw new Error(`Unknown change: ${changeType satisfies never}`);
+                    data.set(
+                      [
+                        verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                          additive[0] * ratio,
+                        verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                          additive[1] * ratio,
+                        verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                          additive[2] * ratio,
+                        verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                          additive[3] * ratio,
+                      ],
+                      (y * width + oldX) * 4 + dataIndex * width,
+                    );
+                  }
+
+                  oldX++;
+                }
+
+                continue;
+              }
+
+              for (const verticalRaster of verticalChange.value) {
+                for (
+                  let dataIndex = 0;
+                  dataIndex < verticalRaster.original.length;
+                  dataIndex += 4
+                ) {
+                  const ratio = verticalChange.added ? 0.125 : 0;
+                  const additive = [34, 220, 71, 255];
+
+                  data.set(
+                    [
+                      verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                        additive[0] * ratio,
+                      verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                        additive[1] * ratio,
+                      verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                        additive[2] * ratio,
+                      verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                        additive[3] * ratio,
+                    ],
+                    ((y + change.old.length) * width + newX) * 4 +
+                      dataIndex * width,
+                  );
+                }
+
+                if (!verticalChange.added) {
+                  oldX++;
+                }
+                newX++;
+              }
+            }
+          }
+
+          y += change.old.length + change.new.length;
+          break;
+        }
+
+        default: {
+          throw new Error(`Unknown change: ${changeType satisfies never}`);
+        }
       }
     }
+
+    yield { width, height, data };
   }
+}
 
-  return { width, height, data };
-};
-
-const diffRasters = function* (
-  oldRasters: Raster[],
-  newRasters: Raster[],
-) {
+function* diffRasters(oldRasters: Raster[], newRasters: Raster[]) {
   const chunkSize = 8192;
   for (
     let chunkIndex = 0;
     chunkIndex < Math.max(oldRasters.length, newRasters.length);
     chunkIndex += chunkSize
   ) {
-    yield* diffArrays(
+    yield diffArrays(
       oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
       newRasters.slice(chunkIndex, chunkIndex + chunkSize),
       {
@@ -328,7 +325,7 @@ const diffRasters = function* (
       },
     );
   }
-};
+}
 
 const transposeRasters = (rasters: Raster[]) => {
   const width = rasters.length;

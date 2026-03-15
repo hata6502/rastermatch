@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 
-import { Raster, generateDiffImage, rasterize } from "./index.js";
+import { Raster, generateDiffImages, rasterize } from "./index.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
 
@@ -122,9 +122,10 @@ export const App: FunctionComponent = () => {
         throw abortController.signal.reason;
       }
       imageGroup.replaceChildren();
-      for (const diffImageChunk of [
-        await generateDiffImage(oldRasters, newRasters),
-      ]) {
+      for await (const diffImageChunk of generateDiffImages(
+        oldRasters,
+        newRasters,
+      )) {
         const chunkCanvas = document.createElement("canvas");
         chunkCanvas.width = diffImageChunk.width;
         chunkCanvas.height = diffImageChunk.height;
