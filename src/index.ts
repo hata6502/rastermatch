@@ -1,30 +1,9 @@
-import { ArrayChange, diffArrays } from "diff";
+import { diffArrays } from "diff";
 
 export interface Raster {
   original: Uint8ClampedArray;
   hash: string;
 }
-
-export const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) => {
-  const chunkSize = 8192;
-  const chunks = [];
-  for (
-    let chunkIndex = 0;
-    chunkIndex < Math.max(oldRasters.length, newRasters.length);
-    chunkIndex += chunkSize
-  ) {
-    chunks.push({
-      oldChunk: oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
-      newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
-    });
-  }
-
-  return chunks.flatMap(({ oldChunk, newChunk }) =>
-    diffArrays(oldChunk, newChunk, {
-      comparator: (left, right) => left.hash === right.hash,
-    }),
-  );
-};
 
 export const rasterize = async (image: {
   width: number;
@@ -120,7 +99,12 @@ export const rasterize = async (image: {
   return rasters;
 };
 
-export const generateDiffImage = async (diff: ArrayChange<Raster>[]) => {
+export const generateDiffImage = async (
+  oldRasters: Raster[],
+  newRasters: Raster[],
+) => {
+  const diff = diffRasters(oldRasters, newRasters);
+
   const rasterDiff = [];
   for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
     const change = diff[changeIndex];
@@ -324,6 +308,27 @@ export const generateDiffImage = async (diff: ArrayChange<Raster>[]) => {
   }
 
   return { width, height, data };
+};
+
+const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) => {
+  const chunkSize = 8192;
+  const chunks = [];
+  for (
+    let chunkIndex = 0;
+    chunkIndex < Math.max(oldRasters.length, newRasters.length);
+    chunkIndex += chunkSize
+  ) {
+    chunks.push({
+      oldChunk: oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
+      newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
+    });
+  }
+
+  return chunks.flatMap(({ oldChunk, newChunk }) =>
+    diffArrays(oldChunk, newChunk, {
+      comparator: (left, right) => left.hash === right.hash,
+    }),
+  );
 };
 
 const transposeRasters = (rasters: Raster[]) => {
