@@ -118,25 +118,16 @@ export const App: FunctionComponent = () => {
         return;
       }
       const imageGroup = imageGroupRef.current;
-
-      const diffImage = await generateDiffImage(oldRasters, newRasters);
-      if (!diffImage.width || !diffImage.height) {
-        return;
-      }
-
       if (abortController.signal.aborted) {
         throw abortController.signal.reason;
       }
       imageGroup.replaceChildren();
-      // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
-      const chunkHeight = Math.min(
-        32767,
-        Math.floor(268435456 / diffImage.width),
-      );
-      for (let chunkY = 0; chunkY < diffImage.height; chunkY += chunkHeight) {
+      for (const diffImageChunk of [
+        await generateDiffImage(oldRasters, newRasters),
+      ]) {
         const chunkCanvas = document.createElement("canvas");
-        chunkCanvas.width = diffImage.width;
-        chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
+        chunkCanvas.width = diffImageChunk.width;
+        chunkCanvas.height = diffImageChunk.height;
         const chunkCanvasContext = chunkCanvas.getContext("2d");
         if (!chunkCanvasContext) {
           throw new Error("context is null");
@@ -144,10 +135,7 @@ export const App: FunctionComponent = () => {
 
         chunkCanvasContext.putImageData(
           new ImageData(
-            diffImage.data.slice(
-              chunkY * chunkCanvas.width * 4,
-              (chunkY + chunkCanvas.height) * chunkCanvas.width * 4,
-            ),
+            diffImageChunk.data,
             chunkCanvas.width,
             chunkCanvas.height,
           ),

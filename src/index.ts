@@ -103,7 +103,7 @@ export const generateDiffImage = async (
   oldRasters: Raster[],
   newRasters: Raster[],
 ) => {
-  const diff = diffRasters(oldRasters, newRasters);
+  const diff = [...diffRasters(oldRasters, newRasters)];
 
   const rasterDiff = [];
   for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
@@ -310,25 +310,24 @@ export const generateDiffImage = async (
   return { width, height, data };
 };
 
-const diffRasters = (oldRasters: Raster[], newRasters: Raster[]) => {
+const diffRasters = function* (
+  oldRasters: Raster[],
+  newRasters: Raster[],
+) {
   const chunkSize = 8192;
-  const chunks = [];
   for (
     let chunkIndex = 0;
     chunkIndex < Math.max(oldRasters.length, newRasters.length);
     chunkIndex += chunkSize
   ) {
-    chunks.push({
-      oldChunk: oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
-      newChunk: newRasters.slice(chunkIndex, chunkIndex + chunkSize),
-    });
+    yield* diffArrays(
+      oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
+      newRasters.slice(chunkIndex, chunkIndex + chunkSize),
+      {
+        comparator: (left, right) => left.hash === right.hash,
+      },
+    );
   }
-
-  return chunks.flatMap(({ oldChunk, newChunk }) =>
-    diffArrays(oldChunk, newChunk, {
-      comparator: (left, right) => left.hash === right.hash,
-    }),
-  );
 };
 
 const transposeRasters = (rasters: Raster[]) => {
