@@ -1,13 +1,14 @@
 # rastermatch
 
-## Installation
+ブラウザ上で PDF や画像の差分を行単位で比較するツールです。
+
+公開サイト: https://diff.hata6502.com/
+
+## Development
 
 ```bash
-npm i -g rastermatch
-```
-
-## Usage
-
-```bash
-rastermatch old.png new.png output.png
+npm install
+npm test
+npm run build
+npm start
 ```

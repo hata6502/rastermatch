@@ -4,29 +4,21 @@
   "license": "CC0-1.0",
   "author": "hata6502",
   "type": "module",
-  "main": "docs/index.js",
-  "bin": {
-    "rastermatch": "docs/cli.js"
-  },
   "scripts": {
-    "build": "tsc && npm run build:css && npm run build:app",
+    "build": "npm run build:css && npm run build:app",
     "build:css": "npx tailwindcss -i src/index.css -o docs/index.css --minify",
     "build:app": "esbuild src/app.tsx --bundle --format=esm --minify --outfile=docs/app.js",
     "test": "tsc --noEmit",
     "start": "http-server -c-1 docs"
   },
-  "dependencies": {
-    "@types/diff": "^6.0.0",
-    "diff": "^8.0.3",
-    "pngjs": "^7.0.0"
-  },
   "devDependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
-    "@types/pngjs": "^6.0.5",
+    "@types/diff": "^6.0.0",
     "@types/react": "^18.3.16",
     "@types/react-dom": "^18.3.5",
     "clsx": "^2.1.1",
+    "diff": "^8.0.3",
     "esbuild": "^0.25.0",
     "http-server": "^14.1.1",
     "pdfjs-dist": "^4.9.155",
