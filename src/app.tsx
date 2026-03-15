@@ -13,7 +13,13 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 
-import { Raster, diffRasters, generateDiffImage, rasterize } from "./index.js";
+import {
+  Raster,
+  diffRasters,
+  generateDiffImages,
+  getMaxRasterWidth,
+  rasterize,
+} from "./index.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
 
@@ -118,64 +124,77 @@ export const App: FunctionComponent = () => {
         return;
       }
       const imageGroup = imageGroupRef.current;
-
-      const diff = diffRasters(oldRasters, newRasters);
-      const diffImage = await generateDiffImage(diff);
-      if (!diffImage.width || !diffImage.height) {
-        return;
-      }
-
-      if (abortController.signal.aborted) {
-        throw abortController.signal.reason;
-      }
       imageGroup.replaceChildren();
-      // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
-      const chunkHeight = Math.min(
-        32767,
-        Math.floor(268435456 / diffImage.width),
+      const diffWidth = Math.max(
+        getMaxRasterWidth(oldRasters),
+        getMaxRasterWidth(newRasters),
       );
-      for (let chunkY = 0; chunkY < diffImage.height; chunkY += chunkHeight) {
-        const chunkCanvas = document.createElement("canvas");
-        chunkCanvas.width = diffImage.width;
-        chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
-        const chunkCanvasContext = chunkCanvas.getContext("2d");
-        if (!chunkCanvasContext) {
-          throw new Error("context is null");
-        }
-
-        chunkCanvasContext.putImageData(
-          new ImageData(
-            diffImage.data.slice(
-              chunkY * chunkCanvas.width * 4,
-              (chunkY + chunkCanvas.height) * chunkCanvas.width * 4,
-            ),
-            chunkCanvas.width,
-            chunkCanvas.height,
-          ),
-          0,
-          0,
-        );
-
-        const chunkBlob = await new Promise<Blob>((resolve, reject) => {
-          chunkCanvas.toBlob((blob) => {
-            if (!blob) {
-              reject(new Error("blob is null"));
-              return;
-            }
-
-            resolve(blob);
-          }, "image/png");
-        });
-
+      for await (const diffImage of generateDiffImages(
+        diffRasters(oldRasters, newRasters),
+        diffWidth,
+      )) {
         if (abortController.signal.aborted) {
           throw abortController.signal.reason;
         }
-        const chunkImage = document.createElement("img");
-        chunkImage.src = URL.createObjectURL(chunkBlob);
-        chunkImage.classList.add("block");
-        imageGroup.append(chunkImage);
+
+        // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
+        const chunkHeight = Math.max(
+          1,
+          Math.min(32767, Math.floor(268435456 / diffImage.width)),
+        );
+        for (
+          let chunkY = 0;
+          chunkY < diffImage.height;
+          chunkY += chunkHeight
+        ) {
+          const chunkCanvas = document.createElement("canvas");
+          chunkCanvas.width = diffImage.width;
+          chunkCanvas.height = Math.min(chunkHeight, diffImage.height - chunkY);
+          const chunkCanvasContext = chunkCanvas.getContext("2d");
+          if (!chunkCanvasContext) {
+            throw new Error("context is null");
+          }
+
+          chunkCanvasContext.putImageData(
+            new ImageData(
+              diffImage.data.slice(
+                chunkY * chunkCanvas.width * 4,
+                (chunkY + chunkCanvas.height) * chunkCanvas.width * 4,
+              ),
+              chunkCanvas.width,
+              chunkCanvas.height,
+            ),
+            0,
+            0,
+          );
+
+          const chunkBlob = await new Promise<Blob>((resolve, reject) => {
+            chunkCanvas.toBlob((blob) => {
+              if (!blob) {
+                reject(new Error("blob is null"));
+                return;
+              }
+
+              resolve(blob);
+            }, "image/png");
+          });
+
+          if (abortController.signal.aborted) {
+            throw abortController.signal.reason;
+          }
+          const chunkImage = document.createElement("img");
+          chunkImage.src = URL.createObjectURL(chunkBlob);
+          chunkImage.classList.add("block");
+          imageGroup.append(chunkImage);
+        }
       }
-    })();
+    })().catch((error) => {
+      if (error === abortController.signal.reason) {
+        return;
+      }
+
+      throw error;
+    });
 
     return () => {
       abortController.abort();
