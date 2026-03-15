@@ -13,13 +13,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 
-import {
-  Raster,
-  diffRasters,
-  generateDiffImages,
-  getMaxRasterWidth,
-  rasterize,
-} from "./index.js";
+import { Raster, diffRasters, generateDiffImage, rasterize } from "./index.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.mjs";
 
@@ -124,17 +118,19 @@ export const App: FunctionComponent = () => {
         return;
       }
       const imageGroup = imageGroupRef.current;
-      imageGroup.replaceChildren();
-      const diffWidth = Math.max(
-        getMaxRasterWidth(oldRasters),
-        getMaxRasterWidth(newRasters),
+
+      const diffWidth = [...oldRasters, ...newRasters].reduce(
+        (max, raster) => Math.max(max, raster.original.length / 4),
+        0,
       );
-      for await (const diffImage of generateDiffImages(
-        diffRasters(oldRasters, newRasters),
-        diffWidth,
-      )) {
+      imageGroup.replaceChildren();
+      for await (const diff of diffRasters(oldRasters, newRasters)) {
+        const diffImage = await generateDiffImage(diff, diffWidth);
+        if (!diffImage.width || !diffImage.height) {
+          continue;
+        }
         if (abortController.signal.aborted) {
-          throw abortController.signal.reason;
+          return;
         }
 
         // https://developer.mozilla.org/ja/docs/Web/HTML/Element/canvas#%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%90%E3%82%B9%E3%81%AE%E6%9C%80%E5%A4%A7%E5%AF%B8%E6%B3%95
@@ -180,7 +176,7 @@ export const App: FunctionComponent = () => {
           });
 
           if (abortController.signal.aborted) {
-            throw abortController.signal.reason;
+            return;
           }
           const chunkImage = document.createElement("img");
           chunkImage.src = URL.createObjectURL(chunkBlob);
@@ -188,13 +184,7 @@ export const App: FunctionComponent = () => {
           imageGroup.append(chunkImage);
         }
       }
-    })().catch((error) => {
-      if (error === abortController.signal.reason) {
-        return;
-      }
-
-      throw error;
-    });
+    })();
 
     return () => {
       abortController.abort();

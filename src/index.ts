@@ -5,28 +5,6 @@ export interface Raster {
   hash: string;
 }
 
-type RasterDiff =
-  | {
-      type: "added" | "removed" | "unchanged";
-      value: Raster[];
-    }
-  | {
-      type: "changed";
-      old: Raster[];
-      new: Raster[];
-    };
-
-const compareRasters = (left: Raster, right: Raster) => left.hash === right.hash;
-
-const waitForNextTask = async () => {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, 0);
-  });
-};
-
-export const getMaxRasterWidth = (rasters: Raster[]) =>
-  rasters.reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
-
 export const diffRasters = async function* (
   oldRasters: Raster[],
   newRasters: Raster[],
@@ -41,11 +19,9 @@ export const diffRasters = async function* (
       oldRasters.slice(chunkIndex, chunkIndex + chunkSize),
       newRasters.slice(chunkIndex, chunkIndex + chunkSize),
       {
-        comparator: compareRasters,
+        comparator: (left, right) => left.hash === right.hash,
       },
     );
-
-    await waitForNextTask();
   }
 };
 
@@ -143,8 +119,11 @@ export const rasterize = async (image: {
   return rasters;
 };
 
-const createRasterDiff = (diff: ArrayChange<Raster>[]) => {
-  const rasterDiff: RasterDiff[] = [];
+export const generateDiffImage = async (
+  diff: ArrayChange<Raster>[],
+  width?: number,
+) => {
+  const rasterDiff = [];
   for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
     const change = diff[changeIndex];
     const nextChange = diff.at(changeIndex + 1);
@@ -179,39 +158,26 @@ const createRasterDiff = (diff: ArrayChange<Raster>[]) => {
     } as const);
   }
 
-  return rasterDiff;
-};
+  width ??= rasterDiff
+    .flatMap((change) => {
+      const changeType = change.type;
+      switch (changeType) {
+        case "added":
+        case "removed":
+        case "unchanged": {
+          return change.value;
+        }
 
-const getDiffWidth = (rasterDiff: RasterDiff[]) =>
-  rasterDiff.reduce((max, change) => {
-    const changeType = change.type;
-    switch (changeType) {
-      case "added":
-      case "removed":
-      case "unchanged": {
-        return Math.max(max, getMaxRasterWidth(change.value));
+        case "changed": {
+          return [...change.old, ...change.new];
+        }
+
+        default: {
+          throw new Error(`Unknown change: ${changeType satisfies never}`);
+        }
       }
-
-      case "changed": {
-        return Math.max(
-          max,
-          getMaxRasterWidth(change.old),
-          getMaxRasterWidth(change.new),
-        );
-      }
-
-      default: {
-        throw new Error(`Unknown change: ${changeType satisfies never}`);
-      }
-    }
-  }, 0);
-
-const generateDiffImageChunk = async (
-  diff: ArrayChange<Raster>[],
-  width?: number,
-) => {
-  const rasterDiff = createRasterDiff(diff);
-  const resolvedWidth = width ?? getDiffWidth(rasterDiff);
+    })
+    .reduce((max, raster) => Math.max(max, raster.original.length / 4), 0);
   const height = rasterDiff.reduce((sum, change) => {
     const changeType = change.type;
     switch (changeType) {
@@ -231,7 +197,7 @@ const generateDiffImageChunk = async (
     }
   }, 0);
 
-  const data = new Uint8ClampedArray(resolvedWidth * height * 4);
+  const data = new Uint8ClampedArray(width * height * 4);
   let y = 0;
   for (const change of rasterDiff) {
     const changeType = change.type;
@@ -267,7 +233,7 @@ const generateDiffImageChunk = async (
                 raster.original[dataIndex + 3] * (1 - ratio) +
                   additive[3] * ratio,
               ],
-              y * resolvedWidth * 4 + dataIndex,
+              y * width * 4 + dataIndex,
             );
           }
 
@@ -278,52 +244,26 @@ const generateDiffImageChunk = async (
       }
 
       case "changed": {
-        let oldX = 0;
-        let newX = 0;
+        const verticalDiff: ArrayChange<Raster>[] = [];
         for await (const verticalDiffChunk of diffRasters(
           await rasterize(transposeRasters(change.old)),
           await rasterize(transposeRasters(change.new)),
         )) {
-          for (const verticalChange of verticalDiffChunk) {
-            if (verticalChange.removed) {
-              for (const verticalRaster of verticalChange.value) {
-                for (
-                  let dataIndex = 0;
-                  dataIndex < verticalRaster.original.length;
-                  dataIndex += 4
-                ) {
-                  const ratio = 0.125;
-                  const additive = [255, 12, 0, 255];
+          verticalDiff.push(...verticalDiffChunk);
+        }
 
-                  data.set(
-                    [
-                      verticalRaster.original[dataIndex + 0] * (1 - ratio) +
-                        additive[0] * ratio,
-                      verticalRaster.original[dataIndex + 1] * (1 - ratio) +
-                        additive[1] * ratio,
-                      verticalRaster.original[dataIndex + 2] * (1 - ratio) +
-                        additive[2] * ratio,
-                      verticalRaster.original[dataIndex + 3] * (1 - ratio) +
-                        additive[3] * ratio,
-                    ],
-                    (y * resolvedWidth + oldX) * 4 + dataIndex * resolvedWidth,
-                  );
-                }
-
-                oldX++;
-              }
-
-              continue;
-            }
-
+        let oldX = 0;
+        let newX = 0;
+        for (const verticalChange of verticalDiff) {
+          if (verticalChange.removed) {
             for (const verticalRaster of verticalChange.value) {
               for (
                 let dataIndex = 0;
                 dataIndex < verticalRaster.original.length;
                 dataIndex += 4
               ) {
-                const ratio = verticalChange.added ? 0.125 : 0;
-                const additive = [34, 220, 71, 255];
+                const ratio = 0.125;
+                const additive = [255, 12, 0, 255];
 
                 data.set(
                   [
@@ -336,16 +276,45 @@ const generateDiffImageChunk = async (
                     verticalRaster.original[dataIndex + 3] * (1 - ratio) +
                       additive[3] * ratio,
                   ],
-                  ((y + change.old.length) * resolvedWidth + newX) * 4 +
-                    dataIndex * resolvedWidth,
+                  (y * width + oldX) * 4 + dataIndex * width,
                 );
               }
 
-              if (!verticalChange.added) {
-                oldX++;
-              }
-              newX++;
+              oldX++;
             }
+
+            continue;
+          }
+
+          for (const verticalRaster of verticalChange.value) {
+            for (
+              let dataIndex = 0;
+              dataIndex < verticalRaster.original.length;
+              dataIndex += 4
+            ) {
+              const ratio = verticalChange.added ? 0.125 : 0;
+              const additive = [34, 220, 71, 255];
+
+              data.set(
+                [
+                  verticalRaster.original[dataIndex + 0] * (1 - ratio) +
+                    additive[0] * ratio,
+                  verticalRaster.original[dataIndex + 1] * (1 - ratio) +
+                    additive[1] * ratio,
+                  verticalRaster.original[dataIndex + 2] * (1 - ratio) +
+                    additive[2] * ratio,
+                  verticalRaster.original[dataIndex + 3] * (1 - ratio) +
+                    additive[3] * ratio,
+                ],
+                ((y + change.old.length) * width + newX) * 4 +
+                  dataIndex * width,
+              );
+            }
+
+            if (!verticalChange.added) {
+              oldX++;
+            }
+            newX++;
           }
         }
 
@@ -359,22 +328,7 @@ const generateDiffImageChunk = async (
     }
   }
 
-  return { width: resolvedWidth, height, data };
-};
-
-export const generateDiffImages = async function* (
-  diffChunks: AsyncIterable<ArrayChange<Raster>[]>,
-  width?: number,
-) {
-  for await (const diffChunk of diffChunks) {
-    const diffImage = await generateDiffImageChunk(diffChunk, width);
-    if (!diffImage.width || !diffImage.height) {
-      continue;
-    }
-
-    yield diffImage;
-    await waitForNextTask();
-  }
+  return { width, height, data };
 };
 
 const transposeRasters = (rasters: Raster[]) => {
