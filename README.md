@@ -1,4 +1,4 @@
-# rastermatch
+# rasterdiff
 
 ブラウザ上で PDF や画像の差分を行単位で比較するツールです。
 
