@@ -6,7 +6,9 @@
     "lib": ["DOM", "DOM.Iterable", "ESNext", "WebWorker"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "outDir": "dist",
     "pretty": true,
+    "rootDir": "src",
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext"

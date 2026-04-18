@@ -1,14 +1,35 @@
 # rasterdiff
 
-ブラウザ上で PDF や画像の差分を行単位で比較するツールです。
+Raster Diff is a line-by-line image diff tool for documents.
 
-公開サイト: https://diff.hata6502.com/
+Website: https://diff.hata6502.com/
+
+The web app compares PDFs and images in the browser without uploading files.
+The CLI currently supports PNG input and writes a single PNG diff image.
+
+## CLI
+
+```bash
+rasterdiff before.png after.png output.png
+```
+
+Exit status:
+
+- `0`: no diff
+- `1`: diff found
+- `2`: usage or runtime error
 
 ## Development
 
+Build the CLI locally:
+
 ```bash
 npm install
-npm test
 npm run build
-npm start
+```
+
+Run it:
+
+```bash
+node dist/cli.js before.png after.png output.png
 ```

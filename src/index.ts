@@ -5,6 +5,13 @@ export interface Raster {
   hash: string;
 }
 
+export interface DiffImageChunk {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
+  different: boolean;
+}
+
 export const rasterize = async (image: {
   width: number;
   height: number;
@@ -102,7 +109,7 @@ export const rasterize = async (image: {
 export async function* generateDiffImages(
   oldRasters: Raster[],
   newRasters: Raster[],
-) {
+): AsyncGenerator<DiffImageChunk> {
   for (const diff of diffRasters(oldRasters, newRasters)) {
     const rasterDiff = [];
     for (let changeIndex = 0; changeIndex < diff.length; changeIndex++) {
@@ -306,7 +313,9 @@ export async function* generateDiffImages(
       }
     }
 
-    yield { width, height, data };
+    const different = diff.some((change) => change.added || change.removed);
+
+    yield { width, height, data, different };
   }
 }
 
