@@ -19,6 +19,10 @@
     "test": "tsc --noEmit",
     "start": "http-server -c-1 docs"
   },
+  "dependencies": {
+    "diff": "^8.0.3",
+    "jimp": "^1.6.1"
+  },
   "devDependencies": {
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
@@ -26,10 +30,8 @@
     "@types/react": "^18.3.16",
     "@types/react-dom": "^18.3.5",
     "clsx": "^2.1.1",
-    "diff": "^8.0.3",
     "esbuild": "^0.25.0",
     "http-server": "^14.1.1",
-    "jimp": "^1.6.1",
     "pdfjs-dist": "^4.9.155",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
